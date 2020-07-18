@@ -11,7 +11,13 @@ set(LIB_EVLTLS evltls)
 
 set(kproxy_lib kpx)
 set(LIB_EVLTLS_SRC 
-    src/evltls.cpp
+    lib/utils.cpp
+    lib/events.cpp
+    lib/logger.cpp
+    lib/stream.cpp
+    lib/shared_memory.cpp
+    lib/stream_object.cpp
+    lib/object_manager.cpp
     )
 
 include_directories("${CMAKE_CURRENT_LIST_DIR}/include")
@@ -35,5 +41,23 @@ add_library(${LIB_EVLTLS} STATIC ${LIB_EVLTLS_SRC})
 
 target_link_libraries(${LIB_EVLTLS} ${OPENSSL_CRYPTO_LIBRARY})
 target_link_libraries(${LIB_EVLTLS} ${OPENSSL_SSL_LIBRARY})
+#}
+
+# test #{
+file(GLOB TEST_FILES_CPP "${CMAKE_CURRENT_LIST_DIR}/tests/test-*.cpp")
+file(GLOB TEST_FILES_CX  "${CMAKE_CURRENT_LIST_DIR}/tests/test-*.cx")
+file(GLOB TEST_FILES     "${CMAKE_CURRENT_LIST_DIR}/tests/test-*.c")
+list(APPEND TEST_FILES ${TEST_FILES_CPP} ${TEST_FILES_CX})
+foreach (test_file IN LISTS TEST_FILES)
+    get_filename_component(fname ${test_file} NAME_WE)
+    string(LENGTH ${fname} fname_len)
+    math(EXPR name_len "${fname_len} - 5")
+    string(SUBSTRING ${fname} 5 ${name_len} execname)
+    message(STATUS "test=${execname}")
+    add_executable(${execname} ${test_file})
+    add_dependencies(${execname} ${LIB_EVLTLS})
+    target_link_libraries(${execname} ${LIB_EVLTLS})
+    set_target_properties(${execname} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+endforeach()
 #}
 
