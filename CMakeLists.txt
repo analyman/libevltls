@@ -7,7 +7,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_FLAGS "-g ${CMAKE_CXX_FLAGS}")
 set(CMAKE_C_FLAGS   "-g ${CMAKE_C_FLAGS}")
 
-set(LIB_EVLTLS evltls)
+set(LIB_EVLTLS evtls)
 
 set(kproxy_lib kpx)
 set(LIB_EVLTLS_SRC 
@@ -38,6 +38,12 @@ include_directories(${OPENSSL_INCLUDE_DIR})
 
 # evltls library #{
 add_library(${LIB_EVLTLS} STATIC ${LIB_EVLTLS_SRC})
+
+target_include_directories(${LIB_EVLTLS}
+    PUBLIC
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+    PRIVATE
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/lib>)
 
 target_link_libraries(${LIB_EVLTLS} ${OPENSSL_CRYPTO_LIBRARY})
 target_link_libraries(${LIB_EVLTLS} ${OPENSSL_SSL_LIBRARY})

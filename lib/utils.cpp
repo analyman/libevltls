@@ -1,4 +1,5 @@
-#include "../include/evltls/utils.h"
+#include "../include/evtls/utils.h"
+#include "../include/evtls/internal/config__.h"
 
 
 X509* str_to_x509(const std::string& str) //{

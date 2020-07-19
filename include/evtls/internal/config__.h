@@ -3,9 +3,6 @@
 #include "../logger.h"
 #define __logger Logger::logger
 
-#define NS_EVLTLS_START  namespace evtls {
-#define NS_EVLTLS_END    }
-
 #define FUNCNAME __func__
 
 /** speed recalculate timeout */

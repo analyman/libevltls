@@ -1,6 +1,7 @@
 #include <assert.h>
 
-#include "../include/evltls/events.h"
+#include "../include/evtls/internal/config__.h"
+#include "../include/evtls/events.h"
 
 NS_EVLTLS_START
 

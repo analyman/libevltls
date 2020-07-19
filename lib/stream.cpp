@@ -1,8 +1,8 @@
-#include "../include/evltls/stream.h"
-#include "../include/evltls/object_manager.h"
+#include "../include/evtls/stream.h"
+#include "../include/evtls/object_manager.h"
 
-#include "../include/evltls/logger.h"
-#include "../include/evltls/internal/config.h"
+#include "../include/evtls/logger.h"
+#include "../include/evtls/internal/config__.h"
 
 
 #define DEBUG(all...) __logger->debug(all)

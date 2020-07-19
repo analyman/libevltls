@@ -8,14 +8,14 @@
 #include <memory>
 #define CALL_PURE_VIRTUAL_FUNCTION() assert(false && "call pure virtual function")
 
-NS_EVLTLS_START
-
-
 /* forward declaration */
 struct addrinfo;
 struct sockaddr;
 
-enum StreamType {Memory, LIBUV};
+NS_EVLTLS_START
+
+
+enum StreamType {Memory, LIBUV, TLS_LIBUV, KPROXY_MULTIPLEXER};
 class __UnderlyingStream {
     StreamType m_type;
     public:

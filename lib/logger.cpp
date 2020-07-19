@@ -1,4 +1,4 @@
-#include "../include/evltls/logger.h"
+#include "../include/evtls/logger.h"
 
 #include <errno.h>
 #include <stdlib.h>
@@ -9,12 +9,40 @@
 #include <vector>
 #include <tuple>
 #include <ostream>
+#include <set>
 
 
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof(a[0]))
 
-std::vector<Logger::Logger*> cleaned_logger;
+std::set<Logger::Logger*>* cleaned_logger = nullptr;
 bool register_logger_cleaner = false;
+
+static void free_logger() //{
+{
+    if(cleaned_logger == nullptr) return;
+    auto loggers_copy = *cleaned_logger;
+    for(auto& logger: loggers_copy)
+        delete logger;
+
+    delete cleaned_logger;
+    cleaned_logger = nullptr;
+} //}
+static void append_to_clean(Logger::Logger* logger) //{
+{
+    if(cleaned_logger == nullptr)
+        cleaned_logger = new std::set<Logger::Logger*>();
+    assert(cleaned_logger->find(logger) == cleaned_logger->end()); 
+    cleaned_logger->insert(logger);
+    if(register_logger_cleaner) return;
+    register_logger_cleaner = true;
+    atexit(free_logger);
+} //}
+static void release_logger(Logger::Logger* logger)  //{
+{
+    assert(cleaned_logger->find(logger) != cleaned_logger->end()); 
+    cleaned_logger->erase(cleaned_logger->find(logger));
+} //}
+
 
 const char * __ALPHA = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 std::string random_string(size_t s) //{
@@ -57,24 +85,17 @@ static inline std::string yello_string(const std::string& msg)  {return color_st
 
 namespace Logger {
 
-Logger* logger = nullptr;
-void free_logger() //{
-{
-    while(cleaned_logger.size() != 0) {
-        delete cleaned_logger.back();
-        cleaned_logger.pop_back();
-    }
-} //}
+Logger* logger = new Logger(random_string(), std::cout);
+/*
 void logger_init_stdout() //{
 {
     if(logger != nullptr) return;
     logger = new Logger(random_string(), std::cout);
-    cleaned_logger.push_back(logger);
     if(register_logger_cleaner) return;
     register_logger_cleaner = true;
     atexit(free_logger); // ease valgrind
 } //}
-
+*/
 
 void Logger::helloLogger() //{
 {
@@ -124,6 +145,7 @@ Logger::Logger()//{
     this->initializeTitle(this->title.c_str());
     this->initializeOutputStream();
     this->m_enabled = true;
+    append_to_clean(this);
 } //}
 Logger::Logger(const std::string& title, const char* filename, bool clean): //{
     fileName(filename)
@@ -131,8 +153,8 @@ Logger::Logger(const std::string& title, const char* filename, bool clean): //{
     assert(clean && "clean logger at exit");
     this->initializeTitle(title.c_str());
     this->initializeOutputStream();
-    cleaned_logger.push_back(this);
     this->m_enabled = true;
+    append_to_clean(this);
 } //}
 Logger::Logger(const std::string& title, const char* filename): //{
     fileName(filename)
@@ -140,6 +162,7 @@ Logger::Logger(const std::string& title, const char* filename): //{
     this->initializeTitle(title.c_str());
     this->initializeOutputStream();
     this->m_enabled = true;
+    append_to_clean(this);
 } //}
 Logger::Logger(const std::string& title, const std::string& filename): //{
     fileName(filename)
@@ -147,6 +170,7 @@ Logger::Logger(const std::string& title, const std::string& filename): //{
     this->initializeTitle(title.c_str());
     this->initializeOutputStream();
     this->m_enabled = true;
+    append_to_clean(this);
 } //}
 Logger::Logger(const std::string& title, std::ostream& outstream): //{
     fileName("")
@@ -155,6 +179,7 @@ Logger::Logger(const std::string& title, std::ostream& outstream): //{
     this->outputStream = &outstream;
     this->helloLogger();
     this->m_enabled = true;
+    append_to_clean(this);
 } //}
 Logger::Logger(const std::string& title) //{
 {
@@ -163,6 +188,7 @@ Logger::Logger(const std::string& title) //{
     this->initializeTitle(this->title.c_str());
     this->initializeOutputStream();
     this->m_enabled = true;
+    append_to_clean(this);
 } //}
 
 Logger::~Logger() //{
@@ -174,6 +200,7 @@ Logger::~Logger() //{
         delete this->outputStream;
     }
     this->outputStream = nullptr;
+    release_logger(this);
 } //}
 
 void Logger::begin_log(const std::string& level) //{

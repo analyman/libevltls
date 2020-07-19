@@ -93,8 +93,6 @@ public:
 
 extern Logger* logger;
 
-void logger_init_stdout();
-
 void debug(const char* msg, ...);
 void info (const char* msg, ...);
 void warn (const char* msg, ...);

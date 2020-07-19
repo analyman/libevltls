@@ -1,4 +1,5 @@
-#include "../include/evltls/shared_memory.h"
+#include "../include/evtls/shared_memory.h"
+#include "../include/evtls/internal/config__.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -117,7 +118,7 @@ SharedMem SharedMem::operator+(const SharedMem& a) const //{
 SharedMem SharedMem::increaseOffset(int a) const //{
 {
     assert(a > 0);
-    assert(this->len <= a);
+    assert(this->len >= a);
     SharedMem buf(*this);
     buf.offset += a;
     buf.len -= a;
