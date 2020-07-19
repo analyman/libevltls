@@ -361,11 +361,13 @@ void EBStreamTLS::releaseUnderlyStream(UNST stream) //{
     SSL_CTX_free(mm->ctx);
     SSL_free(mm->ssl);
     delete  ctx;
-
 } //}
-bool EBStreamTLS::accept(UNST, UNST) //{
+bool EBStreamTLS::accept(UNST stream) //{
 {
-    return false;
+    assert(this->getType() == stream->getType());
+    TLSUS* stream__ = dynamic_cast<decltype(stream__)>(stream.get());
+    assert(stream__);
+    return this->m_ctx->mp_stream->accept(stream__->getstream()->mp_stream);
 } //}
 
 void EBStreamTLS::shutdown(ShutdownCallback cb, void* data) //{
@@ -438,6 +440,8 @@ bool EBStreamTLS::timeout(TimeoutCallback cb, void* data, int time_ms) //{
 
 EBStreamTLS::~EBStreamTLS() //{
 {
+    if(this->m_wait_connect != nullptr)
+        this->call_connect_callback(-1);
 } //}
 
 

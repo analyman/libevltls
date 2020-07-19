@@ -6,6 +6,7 @@
 #include <assert.h>
 
 #include <exception>
+#include <type_traits>
 
 
 NS_EVLTLS_START
@@ -15,7 +16,6 @@ struct SharedMem_shared {
         const char* base;
         size_t ref;
         free_func free;
-        realloc_func realloc;
 };
 
 SharedMem::SharedMem(size_t size): len(size), offset(0) //{
@@ -27,7 +27,6 @@ SharedMem::SharedMem(size_t size): len(size), offset(0) //{
     this->shared = new SharedMem_shared();
     this->shared->base = (char*)malloc(this->len);
     this->shared->free = free;
-    this->shared->realloc = realloc;
     this->shared->ref = 1;
 } //}
 SharedMem::SharedMem(const SharedMem& origin, size_t len, int offset) //{
@@ -38,13 +37,14 @@ SharedMem::SharedMem(const SharedMem& origin, size_t len, int offset) //{
     this->shared = origin.shared;
     this->ref();
 } //}
-SharedMem::SharedMem(void* b, size_t size, size_t offset, free_func free, realloc_func realloc): len(size), offset(offset) //{
+SharedMem::SharedMem(void* b, size_t size, size_t offset, free_func free, realloc_func realloc) //{
 {
     assert(size > 0 && size > offset);
+    this->len = size;
+    this->offset = offset;
     this->shared = new SharedMem_shared();
     this->shared->base = (char*)b;
     this->shared->free = free;
-    this->shared->realloc = realloc;
     this->shared->ref = 1;
 } //}
 
@@ -102,18 +102,10 @@ SharedMem SharedMem::operator+(const SharedMem& a) const //{
 {
     if(this->size() == 0) return a;
     if(a.size() == 0) return *this;
-    if(this->shared->realloc == nullptr) {
-        SharedMem buf(this->size() + a.size());
-        if(this->size() > 0) memcpy(buf.__base(), this->base(), this->size());
-        if(a.size() > 0)     memcpy(buf.__base() + this->size(), a.base(), a.size());
-        return buf;
-    } else {
-        this->shared->base = (char*)this->shared->realloc(this->__base(), this->size() + a.size());
-        memcpy(this->__base() + this->size(), a.base(), a.size());
-        SharedMem buf(*this);
-        buf.len += a.size();
-        return buf;
-    }
+    SharedMem buf(this->size() + a.size());
+    if(this->size() > 0) memcpy(buf.__base(), this->base(), this->size());
+    if(a.size() > 0)     memcpy(buf.__base() + this->size(), a.base(), a.size());
+    return buf;
 } //}
 SharedMem SharedMem::increaseOffset(int a) const //{
 {

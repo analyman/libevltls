@@ -93,6 +93,8 @@ class EBStreamObject: virtual protected EBStreamAbstraction, virtual protected C
         void stopRead();
         void end();
         void close();
+
+        virtual bool accept(EBStreamObject* stream) = 0;
         
         void SetTimeout(TimeoutCallback cb, void* data, int time_ms);
 

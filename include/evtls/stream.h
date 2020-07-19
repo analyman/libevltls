@@ -90,7 +90,7 @@ class EBStreamAbstraction: virtual public EventEmitter, virtual protected Callba
 
         virtual UNST newUnderlyStream() = 0;
         virtual void releaseUnderlyStream(UNST) = 0;
-        virtual bool accept(UNST, UNST) = 0;
+        virtual bool accept(UNST) = 0;
 
         virtual void shutdown(ShutdownCallback cb, void* data) = 0;
 

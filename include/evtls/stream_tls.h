@@ -74,7 +74,6 @@ class EBStreamTLS: virtual public EBStreamAbstraction //{
         bool listen() override;
 
         bool connect(struct sockaddr* addr, ConnectCallback cb, void* data) override;
-        /** local machine byte order */
         bool connect(uint32_t ipv4,              uint16_t port, ConnectCallback cb, void* data) override;
         bool connect(uint8_t  ipv6[16],          uint16_t port, ConnectCallback cb, void* data) override;
         bool connect(const std::string& domname, uint16_t port, ConnectCallback cb, void* data) override;
@@ -90,7 +89,7 @@ class EBStreamTLS: virtual public EBStreamAbstraction //{
 
         UNST newUnderlyStream() override;
         void releaseUnderlyStream(UNST) override;
-        bool accept(UNST, UNST) override;
+        bool accept(UNST) override;
 
         void shutdown(ShutdownCallback cb, void* data) override;
 
