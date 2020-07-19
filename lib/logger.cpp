@@ -86,16 +86,6 @@ static inline std::string yello_string(const std::string& msg)  {return color_st
 namespace Logger {
 
 Logger* logger = new Logger(random_string(), std::cout);
-/*
-void logger_init_stdout() //{
-{
-    if(logger != nullptr) return;
-    logger = new Logger(random_string(), std::cout);
-    if(register_logger_cleaner) return;
-    register_logger_cleaner = true;
-    atexit(free_logger); // ease valgrind
-} //}
-*/
 
 void Logger::helloLogger() //{
 {
