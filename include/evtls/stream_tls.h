@@ -8,6 +8,8 @@
 #include <openssl/pem.h>
 #include <openssl/err.h>
 
+#include <set>
+#include <map>
 
 NS_EVLTLS_START
 
@@ -30,19 +32,20 @@ class EBStreamTLS: virtual public EBStreamAbstraction //{
             SSL_CTX* ctx;
         };
         __EBStreamTLSCTX* m_ctx;
+        __EBStreamTLSCTX* m_ctx_tmp;
+        std::map<EBStreamObject*, __EBStreamTLSCTX*> m_sessions;
         class TLSUS: public __UnderlyingStream {
             __EBStreamTLSCTX* ctx;
             public:
             inline TLSUS(StreamType type, __EBStreamTLSCTX* ctx): __UnderlyingStream(type), ctx(ctx) {}
             inline __EBStreamTLSCTX* getstream() {return this->ctx;}
         };
-        TLSMode m_mode;
 
         ConnectCallback m_wait_connect;
         void*           m_wait_connect_data;
+        static void connect_timeout_callback(void* data);
 
         bool do_tls_handshake();
-        void init_this(UNST stream, const std::string& certificate, const std::string& privateKey);
 
         static void stream_data_listener            (EventEmitter* obj, const std::string& eventname, EventArgs::Base*);
         static void stream_drain_listener           (EventEmitter* obj, const std::string& eventname, EventArgs::Base*);
@@ -54,21 +57,45 @@ class EBStreamTLS: virtual public EBStreamAbstraction //{
         static void stream_unexpected_listener      (EventEmitter* obj, const std::string& eventname, EventArgs::Base*);
         static void stream_shouldStartWrite_listener(EventEmitter* obj, const std::string& eventname, EventArgs::Base*);
         static void stream_shouldStopWrite_listener (EventEmitter* obj, const std::string& eventname, EventArgs::Base*);
+
+        static void session_stream_data_listener            (EventEmitter* obj, const std::string& eventname, EventArgs::Base*);
+        static void session_stream_drain_listener           (EventEmitter* obj, const std::string& eventname, EventArgs::Base*);
+        static void session_stream_error_listener           (EventEmitter* obj, const std::string& eventname, EventArgs::Base*);
+        static void session_stream_end_listener             (EventEmitter* obj, const std::string& eventname, EventArgs::Base*);
+        static void session_stream_close_listener           (EventEmitter* obj, const std::string& eventname, EventArgs::Base*);
+        static void session_stream_connect_listener         (EventEmitter* obj, const std::string& eventname, EventArgs::Base*);
+        static void session_stream_connection_listener      (EventEmitter* obj, const std::string& eventname, EventArgs::Base*);
+        static void session_stream_shouldStartWrite_listener(EventEmitter* obj, const std::string& eventname, EventArgs::Base*);
+        static void session_stream_shouldStopWrite_listener (EventEmitter* obj, const std::string& eventname, EventArgs::Base*);
+        void add_session(__EBStreamTLSCTX* session);
+        void transfer_to_session(EBStreamObject* session);
+        void recover_to_server();
+        void session_complete();
+        void session_failure();
+ 
         void register_listener();
         void call_connect_callback(int status);
         void error_happend();
 
         void pipe_to_tls(SharedMem buf);
+        int  ssl_read();
+        void do_ssl_read_with_timeout_zero();
+        static void call_do_ssl_read(void* data);
+
+        __EBStreamTLSCTX* createCTX(EBStreamObject* stream, TLSMode mode, 
+                                    const std::string& certificate, const std::string& privateKey);
 
 
     protected:
         void _write(SharedMem buf, WriteCallback cb, void* data) override;
 
         virtual EBStreamObject* getStreamObject(UNST) = 0;
+        void init_this(UNST stream);
 
 
     public:
-        EBStreamTLS(TLSMode mode) noexcept;
+        EBStreamTLS(TLSMode mode, const std::string& certificate, const std::string& privateKey) noexcept;
+        EBStreamTLS(UNST tlsctx) noexcept;
 
         bool bind(struct sockaddr* addr) override;
         bool listen() override;

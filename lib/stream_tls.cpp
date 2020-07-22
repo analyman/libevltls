@@ -12,54 +12,86 @@
 NS_EVLTLS_START
 
 
-EBStreamTLS::EBStreamTLS(TLSMode mode) noexcept //{
+EBStreamTLS::EBStreamTLS(TLSMode mode, const std::string& cert, const std::string& privateKey) noexcept //{
 {
-    this->m_ctx = nullptr;
-    this->m_mode = mode;
+    DEBUG("call %s", FUNCNAME);
+    this->m_wait_connect = nullptr;
+    this->m_wait_connect_data = nullptr;
+    this->m_ctx_tmp = nullptr;
+    this->m_ctx = createCTX(nullptr, mode, cert, privateKey);
+    assert(this->m_ctx);
+} //}
+EBStreamTLS::EBStreamTLS(UNST tlsctx) noexcept //{
+{
+    DEBUG("call %s", FUNCNAME);
+    this->m_wait_connect = nullptr;
+    this->m_wait_connect_data = nullptr;
+    TLSUS* ctx = dynamic_cast<decltype(ctx)>(tlsctx.get()); assert(ctx);
+    this->m_ctx_tmp = nullptr;
+    this->m_ctx = ctx->getstream();
+    this->m_ctx->mp_stream->storePtr(this);
+    this->register_listener();
+    this->do_ssl_read_with_timeout_zero();
 } //}
 
-void EBStreamTLS::init_this(UNST stream, const std::string& certificate, const std::string& privateKey) //{
+void EBStreamTLS::init_this(UNST stream) //{
 {
-    assert(!this->m_ctx);
-    this->m_ctx = new __EBStreamTLSCTX();
+    DEBUG("call %s", FUNCNAME);
+    assert(this->m_ctx);
+    assert(!this->m_ctx->mp_stream);
 
     this->m_ctx->mp_stream = this->getStreamObject(stream);
     this->m_ctx->mp_stream->storePtr(this);
 
-    this->m_ctx->mode = this->m_mode;
+    this->register_listener();
+} //}
 
-    this->m_ctx->ctx = SSL_CTX_new(TLS_method()); // TODO
+EBStreamTLS::EBStreamTLSCTX* EBStreamTLS::createCTX(EBStreamObject* stream, TLSMode mode, //{
+                                                    const std::string& cert, 
+                                                    const std::string& privateKey)
+{
+    DEBUG("call %s", FUNCNAME);
+    EBStreamTLSCTX* ans = new std::remove_pointer_t<decltype(ans)>();
+    ans->mode = mode;
 
-    if(this->m_ctx->mode == TLSMode::ServerMode) {
-        if(SSL_CTX_use_certificate(this->m_ctx->ctx, str_to_x509(certificate)) != 0) {
-            this->error_happend();
-            return;
+    ans->ctx = SSL_CTX_new(TLS_method());
+
+    if(ans->mode == TLSMode::ServerMode) {
+        if(SSL_CTX_use_certificate(ans->ctx, str_to_x509(cert)) != 1) {
+            // FIXME ??? seems this assert is too strict, but this function will 
+            // be called from constructor and error handler call virtual function the behavior
+            // is unexpected
+            assert(false && "bad certificate");
+            return nullptr;
         }
-        if(SSL_CTX_use_PrivateKey (this->m_ctx->ctx, str_to_privateKey(privateKey)) != 0) {
-            this->error_happend();
-            return;
+        if(SSL_CTX_use_PrivateKey (ans->ctx, str_to_privateKey(privateKey)) != 1) {
+            assert(false && "bad private key");
+            return nullptr;
         }
-        if(SSL_check_private_key(this->m_ctx->ssl) != 0) {
-            this->error_happend();
-            return;
+        if(SSL_CTX_check_private_key(ans->ctx) != 1) {
+            assert(false && "inconsistent certificate and private key");
+            return nullptr;
         }
     }
 
-    this->m_ctx->rbio = BIO_new(BIO_s_mem());
-    this->m_ctx->wbio = BIO_new(BIO_s_mem());
-    this->m_ctx->ssl  = SSL_new(this->m_ctx->ctx);
+    ans->rbio = BIO_new(BIO_s_mem());
+    ans->wbio = BIO_new(BIO_s_mem());
+    ans->ssl  = SSL_new(ans->ctx);
 
-    if(this->m_ctx->mode == TLSMode::ServerMode)
-        SSL_set_accept_state(this->m_ctx->ssl);
+    if(ans->mode == TLSMode::ServerMode)
+        SSL_set_accept_state(ans->ssl);
     else
-        SSL_set_connect_state(this->m_ctx->ssl);
+        SSL_set_connect_state(ans->ssl);
 
-    SSL_set_bio(this->m_ctx->ssl, this->m_ctx->rbio, this->m_ctx->wbio);
-    this->register_listener();
+    SSL_set_bio(ans->ssl, ans->rbio, ans->wbio);
+
+    ans->mp_stream = stream;
+    return ans;
 } //}
 
 void EBStreamTLS::register_listener() //{
 {
+    DEBUG("call %s", FUNCNAME);
     this->m_ctx->mp_stream->on("data",  stream_data_listener);
     this->m_ctx->mp_stream->on("drain", stream_drain_listener);
     this->m_ctx->mp_stream->on("error", stream_error_listener);
@@ -77,6 +109,7 @@ void EBStreamTLS::register_listener() //{
 } //}
 
 #define GETTHIS(argname) \
+    DEBUG("call %s", FUNCNAME); \
     EBStreamObject* stream = dynamic_cast<decltype(stream)>(obj); assert(stream); \
     EBStreamTLS* _this = \
         dynamic_cast<decltype(_this)>(static_cast<EBStreamTLS*>(stream->fetchPtr())); \
@@ -111,16 +144,31 @@ void EBStreamTLS::stream_close_listener           (EventEmitter* obj, const std:
 void EBStreamTLS::stream_connect_listener         (EventEmitter* obj, const std::string& eventname, EventArgs::Base* aaa) //{
 {
     GETTHIS(ConnectArgs);
+    assert(_this->m_ctx->mode == TLSMode::ClientMode);
     if(_this->m_wait_connect == nullptr) {
         _this->error_happend();
     } else {
-        _this->do_tls_handshake();
+        _this->m_ctx->mp_stream->startRead();
+        if(!_this->do_tls_handshake()) {
+            _this->error_happend();
+        }
     }
 } //}
 void EBStreamTLS::stream_connection_listener      (EventEmitter* obj, const std::string& eventname, EventArgs::Base* aaa) //{
 {
     GETTHIS(ConnectionArgs);
-    _this->on_connection(args->connection);
+    assert(_this->m_ctx->mode == TLSMode::ServerMode);
+    auto newstreamobject = _this->m_ctx->mp_stream->NewStreamObject(args->connection);
+    auto connection = new EBStreamTLSCTX();
+    connection->ctx = _this->m_ctx->ctx;
+    SSL_CTX_up_ref(connection->ctx);
+    connection->mode = _this->m_ctx->mode;
+    connection->mp_stream = newstreamobject;
+    connection->rbio = BIO_new(BIO_s_mem());
+    connection->wbio = BIO_new(BIO_s_mem());
+    connection->ssl = SSL_new(connection->ctx);
+    SSL_set_bio(connection->ssl, connection->rbio, connection->wbio);
+    _this->add_session(connection);
 } //}
 void EBStreamTLS::stream_unexpected_listener      (EventEmitter* obj, const std::string& eventname, EventArgs::Base* aaa) //{
 {
@@ -140,35 +188,197 @@ void EBStreamTLS::stream_shouldStopWrite_listener (EventEmitter* obj, const std:
     GETTHIS(ShouldStopWriteArgs);
     _this->should_stop_write();
 } //}
+
+/** [static] */
+void EBStreamTLS::session_stream_data_listener            (EventEmitter* obj, const std::string& eventname, EventArgs::Base* aaa) //{
+{
+    GETTHIS(DataArgs);
+    _this->transfer_to_session(stream);
+    _this->pipe_to_tls(args->_buf);
+    _this->recover_to_server();
+} //}
+void EBStreamTLS::session_stream_drain_listener           (EventEmitter* obj, const std::string& eventname, EventArgs::Base* aaa) //{
+{
+    GETTHIS(DrainArgs);
+    return;
+} //}
+void EBStreamTLS::session_stream_error_listener           (EventEmitter* obj, const std::string& eventname, EventArgs::Base* aaa) //{
+{
+    GETTHIS(ErrorArgs);
+    _this->transfer_to_session(stream);
+    _this->error_happend();
+    _this->recover_to_server();
+} //}
+void EBStreamTLS::session_stream_end_listener             (EventEmitter* obj, const std::string& eventname, EventArgs::Base* aaa) //{
+{
+    GETTHIS(EndArgs);
+    _this->transfer_to_session(stream);
+    _this->error_happend();
+    _this->recover_to_server();
+} //}
+void EBStreamTLS::session_stream_close_listener           (EventEmitter* obj, const std::string& eventname, EventArgs::Base* aaa) //{
+{
+    GETTHIS(CloseArgs);
+    _this->transfer_to_session(stream);
+    _this->error_happend();
+    _this->recover_to_server();
+} //}
+void EBStreamTLS::session_stream_connect_listener         (EventEmitter* obj, const std::string& eventname, EventArgs::Base* aaa) //{
+{
+    GETTHIS(ConnectArgs);
+    _this->transfer_to_session(stream);
+    _this->error_happend();
+    _this->recover_to_server();
+} //}
+void EBStreamTLS::session_stream_connection_listener      (EventEmitter* obj, const std::string& eventname, EventArgs::Base* aaa) //{
+{
+    GETTHIS(ConnectionArgs);
+    _this->transfer_to_session(stream);
+    _this->error_happend();
+    _this->recover_to_server();
+} //}
+void EBStreamTLS::session_stream_shouldStartWrite_listener(EventEmitter* obj, const std::string& eventname, EventArgs::Base* aaa) //{
+{
+    GETTHIS(ShouldStartWriteArgs);
+} //}
+void EBStreamTLS::session_stream_shouldStopWrite_listener (EventEmitter* obj, const std::string& eventname, EventArgs::Base* aaa) //{
+{
+    GETTHIS(ShouldStopWriteArgs);
+} //}
 #undef GETTHIS
+
+void EBStreamTLS::add_session(__EBStreamTLSCTX* session) //{
+{
+    DEBUG("call %s", FUNCNAME);
+    assert(this->m_ctx->mode == TLSMode::ServerMode);
+    assert(this->m_ctx_tmp == nullptr);
+    assert(this->m_sessions.find(session->mp_stream) == this->m_sessions.end());
+    this->m_sessions[session->mp_stream] = session;
+
+    session->mp_stream->storePtr(this);
+    session->mp_stream->on("data",  session_stream_data_listener);
+    session->mp_stream->on("drain", session_stream_drain_listener);
+    session->mp_stream->on("error", session_stream_error_listener);
+    session->mp_stream->on("end",   session_stream_end_listener);
+    session->mp_stream->on("close", session_stream_close_listener);
+    session->mp_stream->on("connection", session_stream_connection_listener);
+    session->mp_stream->on("connect", session_stream_connect_listener);
+    session->mp_stream->on("shouldStartWrite", session_stream_shouldStartWrite_listener);
+    session->mp_stream->on("shouldStopWrite",  session_stream_shouldStopWrite_listener);
+    session->mp_stream->startRead();
+} //}
+
+void EBStreamTLS::transfer_to_session(EBStreamObject* stream) //{
+{
+    DEBUG("call %s", FUNCNAME);
+    assert(this->m_sessions.find(stream) != this->m_sessions.end());
+    auto session = this->m_sessions[stream];
+    assert(this->m_ctx_tmp == nullptr);
+    this->m_ctx_tmp = this->m_ctx;
+    this->m_ctx = session;
+    assert(this->m_sessions.find(this->m_ctx->mp_stream) != this->m_sessions.end());
+} //}
+void EBStreamTLS::recover_to_server() //{
+{
+    DEBUG("call %s", FUNCNAME);
+    assert(this->m_ctx_tmp != nullptr);
+    this->m_ctx = this->m_ctx_tmp;
+    this->m_ctx_tmp = nullptr;
+} //}
+
+void EBStreamTLS::session_complete() //{
+{
+    DEBUG("call %s", FUNCNAME);
+    assert(this->m_ctx_tmp != nullptr);
+    assert(this->m_sessions.find(this->m_ctx->mp_stream) != this->m_sessions.end());
+    this->m_sessions.erase(this->m_sessions.find(this->m_ctx->mp_stream));
+    auto session = this->m_ctx;
+
+    session->mp_stream->stopRead();
+    session->mp_stream->removeall();
+    session->mp_stream->storePtr(nullptr);
+
+    this->on_connection(UNST(new TLSUS(this->getType(), session)));
+} //}
+void EBStreamTLS::session_failure() //{
+{
+    DEBUG("call %s", FUNCNAME);
+    assert(this->m_ctx_tmp != nullptr);
+    assert(this->m_sessions.find(this->m_ctx->mp_stream) != this->m_sessions.end());
+    this->m_sessions.erase(this->m_sessions.find(this->m_ctx->mp_stream));
+    auto session = this->m_ctx;
+
+    session->mp_stream->stopRead();
+    session->mp_stream->removeall();
+    session->mp_stream->storePtr(nullptr);
+
+    this->releaseUnderlyStream(UNST(new TLSUS(this->getType(), session)));
+    this->on_connection(UNST(new TLSUS(this->getType(), nullptr)));
+} //}
 
 void EBStreamTLS::call_connect_callback(int status) //{
 {
+    DEBUG("call %s", FUNCNAME);
     assert(this->m_wait_connect != nullptr);
     auto _cb   = this->m_wait_connect;
     auto _data = this->m_wait_connect_data;
     this->m_wait_connect = nullptr;
     this->m_wait_connect_data = nullptr;
     _cb(status, _data);
+    this->do_ssl_read_with_timeout_zero();
 } //}
 void EBStreamTLS::error_happend() //{
 {
-    this->read_callback(SharedMem(), -1);
+    DEBUG("call %s", FUNCNAME);
+    if(this->m_ctx_tmp == nullptr) {
+        this->read_callback(SharedMem(), -1);
+    } else {
+        this->session_failure();
+    }
 } //}
 
-// FIXME
 bool EBStreamTLS::do_tls_handshake() //{
 {
-    SSL_do_handshake(this->m_ctx->ssl);
-    // TODO
+    DEBUG("call %s with %s", FUNCNAME, this->m_ctx->mode == TLSMode::ServerMode ? "ServerMode" : "ClientMode");
+    char buf[READ_SIZE];
+
+    int n = SSL_do_handshake(this->m_ctx->ssl);
+    int status = SSL_get_error(this->m_ctx->ssl, n);
+
+    switch(status) {
+        case SSL_ERROR_WANT_READ:
+        case SSL_ERROR_WANT_WRITE:
+            do {
+                n = BIO_read(this->m_ctx->wbio, buf, sizeof(buf));
+                if(n > 0) {
+                    SharedMem sbuf(n);
+                    memcpy(sbuf.__base(), buf, n);
+                    this->m_ctx->mp_stream->write(sbuf);
+                } else if (!BIO_should_retry(this->m_ctx->wbio)) {
+                    return false;
+                }
+            } while (n > 0);
+            return true;
+        case SSL_ERROR_ZERO_RETURN:
+        case SSL_ERROR_SSL:
+        case SSL_ERROR_SYSCALL:
+            return false;
+        default:
+            break;
+    }
+
     return true;
 } //}
 void EBStreamTLS::pipe_to_tls(SharedMem wbuf) //{
 {
+    DEBUG("call %s", FUNCNAME);
     assert(this->m_ctx != nullptr);
     SharedMem& buf = this->m_ctx->write_to_stream;
     buf = buf + wbuf;
     char rbuf[READ_SIZE];
+
+    enum do_something {NOTHING, CALL_CONNECT_CB, COMPLETE_SESSION};
+    do_something doit = NOTHING;
 
     while(buf.size() > 0) {
         auto n = BIO_write(this->m_ctx->rbio, buf.base(), buf.size());
@@ -177,41 +387,31 @@ void EBStreamTLS::pipe_to_tls(SharedMem wbuf) //{
             this->error_happend();
             return;
         }
-        buf.increaseOffset(n);
+        buf = buf.increaseOffset(n);
 
         if(!SSL_is_init_finished(this->m_ctx->ssl)) {
-            auto k = SSL_accept(this->m_ctx->ssl);
-            auto status = SSL_get_error(this->m_ctx->ssl, k);
-            if(status == SSL_ERROR_WANT_READ) {
-                int b = 0;
-                do {
-                    b = BIO_read(this->m_ctx->wbio, rbuf, sizeof(rbuf));
-                    if(b > 0) {
-                        SharedMem bbuf(b);
-                        memcpy(bbuf.__base(), rbuf, b);
-                        this->m_ctx->mp_stream->write(bbuf);
-                    } else if(!BIO_should_retry(this->m_ctx->wbio)) {
-                        this->error_happend();
-                        return;
-                    }
-                } while(b > 0);
+            if(SSL_in_before(this->m_ctx->ssl) && this->m_ctx->mode == TLSMode::ServerMode) // FIXME
+                SSL_accept(this->m_ctx->ssl);
+
+            if(!this->do_tls_handshake()) {
+                this->error_happend();
+                return;
             }
-        } else {
-            if(this->m_wait_connect != nullptr)
-                this->call_connect_callback(0);
+
+            if(SSL_is_init_finished(this->m_ctx->ssl)) {
+                if(this->m_wait_connect != nullptr) {
+                    assert(this->m_ctx->mode == TLSMode::ClientMode);
+                    doit = CALL_CONNECT_CB;
+                    break;
+                } else {
+                    assert(this->m_ctx->mode == TLSMode::ServerMode);
+                    doit = COMPLETE_SESSION;
+                    break;
+                }
+            }
         }
 
-        int k=0;
-        char rbuf[READ_SIZE];
-        do {
-            k = SSL_read(this->m_ctx->ssl, rbuf, sizeof(rbuf));
-            if(k > 0) {
-                SharedMem buf(k);
-                memcpy(buf.__base(), rbuf, k);
-                this->read_callback(buf, 0);
-            }
-        } while(k>0);
-
+        int k = this->ssl_read();
         int status = SSL_get_error(this->m_ctx->ssl, k);
         switch(status) {
             case SSL_ERROR_ZERO_RETURN:
@@ -223,11 +423,66 @@ void EBStreamTLS::pipe_to_tls(SharedMem wbuf) //{
                 break;
         }
     }
+
+    switch(doit) {
+        case CALL_CONNECT_CB:
+            this->m_ctx->mp_stream->stopRead();
+            this->call_connect_callback(0);
+            break;
+        case COMPLETE_SESSION:
+            this->session_complete();
+            break;
+        case NOTHING:
+        default:
+            return;
+    }
+} //}
+int  EBStreamTLS::ssl_read() //{
+{
+    int k=0;
+    char rbuf[READ_SIZE];
+    do {
+        k = SSL_read(this->m_ctx->ssl, rbuf, sizeof(rbuf));
+        if(k > 0) {
+            SharedMem buf(k);
+            memcpy(buf.__base(), rbuf, k);
+            this->read_callback(buf, 0);
+        }
+    } while(k>0);
+    return k;
+} //}
+struct __do_ssl_read_state: public CallbackPointer {
+    EBStreamTLS* _this;
+    inline __do_ssl_read_state(EBStreamTLS* _this): _this(_this) {}
+};
+void EBStreamTLS::do_ssl_read_with_timeout_zero() //{
+{
+    auto ptr = new __do_ssl_read_state(this);
+    this->add_callback(ptr);
+    this->timeout(call_do_ssl_read, ptr, 0);
+} //}
+/** [static] */
+void EBStreamTLS::call_do_ssl_read(void* data) //{
+{
+    __do_ssl_read_state* msg = 
+        dynamic_cast<decltype(msg)>(static_cast<CallbackPointer*>(data));
+    assert(msg);
+
+    auto _this = msg->_this;
+    auto   run = msg->CanRun();
+    delete msg;
+
+    if(!run) return;
+    _this->remove_callback(msg);
+
+    _this->ssl_read();
 } //}
 
 void EBStreamTLS::_write(SharedMem kbuf, WriteCallback cb, void* data) //{
 {
+    DEBUG("call %s", FUNCNAME);
     assert(this->m_ctx != nullptr);
+    assert(this->m_ctx_tmp == nullptr);
     assert(SSL_is_init_finished(this->m_ctx->ssl) == 1);
 
     SharedMem& buf = this->m_ctx->write_to_tls;
@@ -273,18 +528,33 @@ void EBStreamTLS::_write(SharedMem kbuf, WriteCallback cb, void* data) //{
 
 bool EBStreamTLS::bind(struct sockaddr* addr) //{
 {
+    DEBUG("call %s", FUNCNAME);
     return this->m_ctx->mp_stream->bind(addr);
 } //}
 bool EBStreamTLS::listen() //{
 {
+    DEBUG("call %s", FUNCNAME);
     return this->m_ctx->mp_stream->listen();
 } //}
 
+struct __connect_callback_state: public CallbackPointer {
+    EBStreamTLS* _this;
+    EBStreamTLS::ConnectCallback _cb;
+    void* _data;
+    inline __connect_callback_state(EBStreamTLS* _this, EBStreamTLS::ConnectCallback cb, void* data):
+        _this(_this), _cb(cb), _data(data) {}
+};
 #define SETCONNECT() \
+    DEBUG("call %s", FUNCNAME); \
     assert(this->m_ctx != nullptr); \
-    assert(this->m_wait_connect != nullptr);\
+    assert(this->m_wait_connect == nullptr);\
     this->m_wait_connect = cb; \
-    this->m_wait_connect_data = data
+    this->m_wait_connect_data = data; \
+    auto ptr = new __connect_callback_state(this, cb, data); \
+    this->add_callback(ptr); \
+    auto ttt = this->timeout(connect_timeout_callback, ptr, MAX_TLS_CONNECT_TIMEOUT); \
+    assert(ttt)
+
 bool EBStreamTLS::connect(struct sockaddr* addr, ConnectCallback cb, void* data) //{
 {
     SETCONNECT();
@@ -310,35 +580,68 @@ bool EBStreamTLS::connectINet6(const std::string& domname, uint16_t port, Connec
     SETCONNECT();
     return this->m_ctx->mp_stream->connectTo(domname, port);
 } //}
+/** [static] */
+void EBStreamTLS::connect_timeout_callback(void* data) //{
+{
+    DEBUG("call %s", FUNCNAME);
+    __connect_callback_state* msg =
+        dynamic_cast<decltype(msg)>(static_cast<CallbackPointer*>(data));
+    assert(msg);
+
+    auto _this = msg->_this;
+    auto _cb = msg->_cb;
+    auto _data = msg->_data;
+    auto run = msg->CanRun();
+    delete msg;
+
+    if(!run) {
+        _cb(-1, _data);
+        return;
+    }
+    _this->remove_callback(msg);
+
+    if(_this->m_wait_connect != nullptr)
+        _this->call_connect_callback(-1);
+} //}
 
 void EBStreamTLS::stop_read() //{
 {
+    DEBUG("call %s", FUNCNAME);
+    assert(SSL_is_init_finished(this->m_ctx->ssl) == 1);
     this->m_ctx->mp_stream->stopRead();
 } //}
 void EBStreamTLS::start_read() //{
 {
+    DEBUG("call %s", FUNCNAME);
+    assert(SSL_is_init_finished(this->m_ctx->ssl) == 1);
     this->m_ctx->mp_stream->startRead();
 } //}
 bool EBStreamTLS::in_read() //{
 {
+    DEBUG("call %s", FUNCNAME);
+    if(SSL_is_init_finished(this->m_ctx->ssl) <= 0) return false;
     return this->m_ctx->mp_stream->in_read();
 } //}
 
 void EBStreamTLS::getaddrinfo (const char* hostname, GetAddrInfoCallback cb, void* data) //{
 {
+    DEBUG("call %s", FUNCNAME);
     this->m_ctx->mp_stream->getaddrinfo(hostname, cb, data);
 } //}
 void EBStreamTLS::getaddrinfoipv4 (const char* hostname, GetAddrInfoIPv4Callback cb, void* data) //{
 {
+    DEBUG("call %s", FUNCNAME);
     this->m_ctx->mp_stream->getaddrinfoipv4(hostname, cb, data);
 } //}
 void EBStreamTLS::getaddrinfoipv6 (const char* hostname, GetAddrInfoIPv6Callback cb, void* data) //{
 {
+    DEBUG("call %s", FUNCNAME);
     this->m_ctx->mp_stream->getaddrinfoipv6(hostname, cb, data);
 } //}
 
 EBStreamAbstraction::UNST EBStreamTLS::newUnderlyStream() //{
 {
+    DEBUG("call %s", FUNCNAME);
     __EBStreamTLSCTX* new_stream = new __EBStreamTLSCTX();
     new_stream->ctx = this->m_ctx->ctx;
     SSL_CTX_up_ref(this->m_ctx->ctx);
@@ -351,6 +654,7 @@ EBStreamAbstraction::UNST EBStreamTLS::newUnderlyStream() //{
 } //}
 void EBStreamTLS::releaseUnderlyStream(UNST stream) //{
 {
+    DEBUG("call %s", FUNCNAME);
     assert(this->m_ctx == nullptr);
     assert(this->getType() == stream->getType());
     TLSUS* ctx = dynamic_cast<decltype(ctx)>(stream.get()); assert(ctx);
@@ -364,6 +668,7 @@ void EBStreamTLS::releaseUnderlyStream(UNST stream) //{
 } //}
 bool EBStreamTLS::accept(UNST stream) //{
 {
+    DEBUG("call %s", FUNCNAME);
     assert(this->getType() == stream->getType());
     TLSUS* stream__ = dynamic_cast<decltype(stream__)>(stream.get());
     assert(stream__);
@@ -372,6 +677,7 @@ bool EBStreamTLS::accept(UNST stream) //{
 
 void EBStreamTLS::shutdown(ShutdownCallback cb, void* data) //{
 {
+    DEBUG("call %s", FUNCNAME);
     SSL_shutdown(this->m_ctx->ssl);
     char rbuf[READ_SIZE];
     SharedMem buf;
@@ -394,6 +700,7 @@ void EBStreamTLS::shutdown(ShutdownCallback cb, void* data) //{
 
 EBStreamAbstraction::UNST EBStreamTLS::transfer() //{
 {
+    DEBUG("call %s", FUNCNAME);
     assert(this->m_ctx != nullptr);
     auto ctx = this->m_ctx;
     this->m_ctx = nullptr;
@@ -401,15 +708,16 @@ EBStreamAbstraction::UNST EBStreamTLS::transfer() //{
 } //}
 void EBStreamTLS::regain(UNST stream) //{
 {
+    DEBUG("call %s", FUNCNAME);
     assert(this->m_ctx == nullptr);
     assert(this->getType() == stream->getType());
     TLSUS* ctx = dynamic_cast<decltype(ctx)>(stream.get()); assert(ctx);
     this->m_ctx = ctx->getstream();
-    assert(this->m_ctx->mode == this->m_mode);
 } //}
 
 void  EBStreamTLS::release() //{
 {
+    DEBUG("call %s", FUNCNAME);
     assert(this->m_ctx != nullptr);
     auto ctx = this->m_ctx;
     this->m_ctx = nullptr;
@@ -429,19 +737,22 @@ void  EBStreamTLS::release() //{
 } //}
 bool  EBStreamTLS::hasStreamObject() //{
 {
+    DEBUG("call %s", FUNCNAME);
     return (this->m_ctx != nullptr);
 } //}
 
 bool EBStreamTLS::timeout(TimeoutCallback cb, void* data, int time_ms) //{
 {
+    DEBUG("call %s", FUNCNAME);
     this->m_ctx->mp_stream->SetTimeout(cb, data, time_ms);
     return true;
 } //}
 
 EBStreamTLS::~EBStreamTLS() //{
 {
-    if(this->m_wait_connect != nullptr)
-        this->call_connect_callback(-1);
+    DEBUG("call %s", FUNCNAME);
+    if(this->hasStreamObject())
+        this->release();
 } //}
 
 

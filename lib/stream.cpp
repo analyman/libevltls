@@ -100,5 +100,31 @@ uint16_t EBStreamAbstraction::local_port()  //{
 } //}
 
 
+#if defined(_WIN32) || defined(_WIN64) // sockaddr_in sockaddr_in6
+#include <winsock2.h>
+#else
+#include <netinet/in.h>
+#endif // defined(_WIN32) || defined(_WIN64)
+bool EBStreamAbstraction::bind_ipv4(uint16_t port, uint32_t ipv4) //{
+{
+    sockaddr_in addr;
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    addr.sin_addr.s_addr = htonl(ipv4);
+    return this->bind((::sockaddr*)(&addr));
+} //}
+bool EBStreamAbstraction::bind_ipv6(uint16_t port, uint8_t ipv6[16]) //{
+{
+    sockaddr_in6 addr;
+    addr.sin6_family = AF_INET6;
+    addr.sin6_port = htons(port);
+    if(ipv6 == nullptr)
+        memset(&addr.sin6_addr, 0, sizeof(addr.sin6_addr));
+    else
+        memcpy(&addr.sin6_addr, ipv6, sizeof(addr.sin6_addr));
+    return this->bind((::sockaddr*)(&addr));
+} //}
+
+
 NS_EVLTLS_END
 

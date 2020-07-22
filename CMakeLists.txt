@@ -15,6 +15,7 @@ set(LIB_EVLTLS_SRC
     lib/events.cpp
     lib/logger.cpp
     lib/stream.cpp
+    lib/stream_tls.cpp
     lib/shared_memory.cpp
     lib/stream_object.cpp
     lib/object_manager.cpp

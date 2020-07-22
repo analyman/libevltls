@@ -26,7 +26,8 @@ void EBStreamObject::end_signal() //{
 
 void EBStreamObject::on_connection(UNST con) //{
 {
-    this->emit("cnnection", new ConnectionArgs(con));
+    DEBUG("call %s", FUNCNAME);
+    this->emit("connection", new ConnectionArgs(con));
 } //}
 
 void EBStreamObject::should_start_write() //{
@@ -107,7 +108,7 @@ void EBStreamObject::__write(SharedMem buf, WriteCallback cb, void* data) //{
     this->m_writed_size += buf.size();
     auto ptr = new __write_state(this, cb, data, buf.size());
     this->add_callback(ptr);
-    this->_write(buf, write_callback, ptr);
+    this->_write(buf, __write_callback, ptr);
 } //}
 /** [static] */
 void EBStreamObject::__write_callback(SharedMem buf, int status, void* data) //{
@@ -242,6 +243,7 @@ void* EBStreamObject::fetchPtr() {return this->m_store_ptr;}
 
 EBStreamObject::~EBStreamObject() {}
 
+EBStreamObject* EBStreamObject::NewStreamObject() {return this->NewStreamObject(this->newUnderlyStream());}
 
 NS_EVLTLS_END
 

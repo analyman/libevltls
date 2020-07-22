@@ -62,19 +62,21 @@ class EBStreamObject: virtual protected EBStreamAbstraction, virtual protected C
 
 
     protected:
-        void read_callback(SharedMem buf, int status) override;
-        void end_signal() override;
+        virtual void read_callback(SharedMem buf, int status) override;
+        virtual void end_signal() override;
 
-        void should_start_write() override;
-        void should_stop_write () override;
+        virtual void should_start_write() override;
+        virtual void should_stop_write () override;
 
-        void on_connection(UNST) override;
+        virtual void on_connection(UNST) override;
 
 
     public:
         EBStreamObject(size_t max_write_buffer_size);
 
         using EBStreamAbstraction::bind;
+        using EBStreamAbstraction::bind_ipv4;
+        using EBStreamAbstraction::bind_ipv6;
         using EBStreamAbstraction::listen;
         using EBStreamAbstraction::in_read;
 
@@ -101,8 +103,6 @@ class EBStreamObject: virtual protected EBStreamAbstraction, virtual protected C
         void  storePtr(void* ptr);
         void* fetchPtr();
 
-        using EBStreamAbstraction::getType;
-
         using EBStreamAbstraction::speed_out;
         using EBStreamAbstraction::speed_in;
         using EBStreamAbstraction::traffic_out;
@@ -114,7 +114,8 @@ class EBStreamObject: virtual protected EBStreamAbstraction, virtual protected C
 
         virtual ~EBStreamObject();
 
-        virtual EBStreamObject* NewStreamObject() = 0;
+        virtual EBStreamObject* NewStreamObject();
+        virtual EBStreamObject* NewStreamObject(UNST) = 0;
 }; //}
 
 

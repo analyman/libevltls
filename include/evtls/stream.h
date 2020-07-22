@@ -68,9 +68,21 @@ class EBStreamAbstraction: virtual public EventEmitter, virtual protected Callba
 
         inline virtual void on_connection(UNST connection) {CALL_PURE_VIRTUAL_FUNCTION();};
 
+        /*
+        virtual void read_callback(SharedMem buf, int status) = 0;
+        virtual void end_signal() = 0;
+
+        virtual void should_start_write() = 0;
+        virtual void should_stop_write () = 0;
+
+        virtual void on_connection(UNST connection) = 0;
+        */
+
 
     public:
         virtual bool bind(struct sockaddr* addr) = 0;
+        virtual bool bind_ipv4(uint16_t port, uint32_t ipv4 = 0);
+        virtual bool bind_ipv6(uint16_t port, uint8_t ipv6[16] = nullptr);
         virtual bool listen() = 0;
 
         virtual bool connect(struct sockaddr* addr, ConnectCallback cb, void* data) = 0;
