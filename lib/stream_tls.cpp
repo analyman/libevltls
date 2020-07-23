@@ -755,6 +755,28 @@ EBStreamTLS::~EBStreamTLS() //{
         this->release();
 } //}
 
+EBStreamTLS::UNST EBStreamTLS::createStreamWrapper(EBStreamTLSCTX* ctx) //{
+{
+    return UNST(new TLSUS(this->getType(), ctx));
+} //}
+
+/** [static] */
+EBStreamTLS::EBStreamTLSCTX* EBStreamTLS::getCTXFromWrapper(UNST stream) //{
+{
+    TLSUS* m = dynamic_cast<decltype(m)>(stream.get()); assert(m);
+    return m->getstream();
+} //}
+void EBStreamTLS::releaseCTX(EBStreamTLSCTX* mm) //{
+{
+    assert(mm != nullptr);
+
+    if(mm->mp_stream) delete mm->mp_stream;
+    SSL_CTX_free(mm->ctx);
+    BIO_free(mm->rbio);
+    BIO_free(mm->wbio);
+    SSL_free(mm->ssl);
+    delete mm;
+} //}
 
 NS_EVLTLS_END
 

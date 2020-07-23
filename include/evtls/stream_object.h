@@ -112,6 +112,9 @@ class EBStreamObject: virtual protected EBStreamAbstraction, virtual protected C
         using EBStreamAbstraction::local_addr;
         using EBStreamAbstraction::local_port;
 
+        using EBStreamAbstraction::transfer;
+        using EBStreamAbstraction::regain;
+
         virtual ~EBStreamObject();
 
         virtual EBStreamObject* NewStreamObject();

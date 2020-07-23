@@ -132,6 +132,8 @@ class EBStreamTLS: virtual public EBStreamAbstraction //{
 
         using EBStreamTLSCTX = __EBStreamTLSCTX;
         UNST createStreamWrapper(EBStreamTLSCTX*);
+        static EBStreamTLSCTX* getCTXFromWrapper(UNST);
+        static void releaseCTX(EBStreamTLSCTX*);
 }; //}
 
 
