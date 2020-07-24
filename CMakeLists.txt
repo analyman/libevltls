@@ -19,6 +19,7 @@ set(LIB_EVLTLS_SRC
     lib/shared_memory.cpp
     lib/stream_object.cpp
     lib/object_manager.cpp
+    lib/help_class.cpp
     )
 
 include_directories("${CMAKE_CURRENT_LIST_DIR}/include")

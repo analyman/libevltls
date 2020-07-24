@@ -58,5 +58,6 @@ class CallbackManager: public ObjectBoundary {
         ~CallbackManager();
 };
 
+
 NS_EVLTLS_END
 
