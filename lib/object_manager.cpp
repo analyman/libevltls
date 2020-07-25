@@ -7,6 +7,32 @@
 
 NS_EVLTLS_START
 
+ObjectBoundary::ObjectBoundary(): m_checker() //{
+{
+} //}
+void ObjectBoundary::SetChecker  (ObjectChecker* cc) //{
+{
+    assert(this->m_checker.find(cc) == this->m_checker.end());
+    assert(cc->m_exist == true);
+    this->m_checker.insert(cc);
+} //}
+void ObjectBoundary::cleanChecker(ObjectChecker* cc) //{
+{
+    assert(this->m_checker.find(cc) != this->m_checker.end());
+    assert(cc->m_exist == true);
+    this->m_checker.erase(this->m_checker.find(cc));
+} //}
+ObjectBoundary::~ObjectBoundary() //{
+{
+    for(auto& ck: this->m_checker)
+        ck->m_exist = false;
+} //}
+
+std::shared_ptr<ObjectChecker> NewChecker() //{
+{
+    return std::shared_ptr<ObjectChecker>(new ObjectChecker());
+} //}
+
 
 CallbackManager::CallbackManager(): m_invalidate(false) {}
 void CallbackManager::add_callback(CallbackPointer* ptr) {

@@ -34,11 +34,13 @@ class EBStreamTLS: virtual public EBStreamAbstraction //{
         __EBStreamTLSCTX* m_ctx;
         __EBStreamTLSCTX* m_ctx_tmp;
         std::map<EBStreamObject*, __EBStreamTLSCTX*> m_sessions;
-        class TLSUS: public __UnderlyingStream {
+
+        class __TLSUS: public __UnderlyingStream {
             __EBStreamTLSCTX* ctx;
             public:
-            inline TLSUS(StreamType type, __EBStreamTLSCTX* ctx): __UnderlyingStream(type), ctx(ctx) {}
+            inline __TLSUS(StreamType type, __EBStreamTLSCTX* ctx): __UnderlyingStream(type), ctx(ctx) {}
             inline __EBStreamTLSCTX* getstream() {return this->ctx;}
+            inline bool is_null() override {return this->ctx == nullptr;}
         };
 
         ConnectCallback m_wait_connect;
@@ -91,6 +93,9 @@ class EBStreamTLS: virtual public EBStreamAbstraction //{
 
         virtual EBStreamObject* getStreamObject(UNST) = 0;
         void init_this(UNST stream);
+
+        using TLSUS = __TLSUS;
+        static __EBStreamTLSCTX* getCTX(TLSMode mode, EBStreamObject* stream, const std::string& cert, const std::string& privatekey);
 
 
     public:

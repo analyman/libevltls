@@ -2,6 +2,7 @@
 
 #include <map>
 #include <set>
+#include <memory>
 
 #include <assert.h>
 
@@ -23,14 +24,15 @@ class ObjectChecker {
 };
 class ObjectBoundary {
     private:
-        ObjectChecker* m_checker;
+        std::set<ObjectChecker*> m_checker;
 
     public:
-        inline ObjectBoundary(): m_checker(nullptr) {}
-        virtual inline ~ObjectBoundary() {if(m_checker) m_checker->m_exist = false;}
-        inline void SetChecker(ObjectChecker* cc) {assert(cc != nullptr); assert(m_checker == nullptr); this->m_checker = cc;}
-        inline void cleanChecker(ObjectChecker* cc) {assert(m_checker == cc && m_checker->exist()); this->m_checker = nullptr;}
+        ObjectBoundary();
+        void SetChecker  (ObjectChecker* cc);
+        void cleanChecker(ObjectChecker* cc);
+        virtual ~ObjectBoundary();
 };
+std::shared_ptr<ObjectChecker> NewChecker();
 
 
 class CallbackManager;

@@ -21,6 +21,7 @@ class __UnderlyingStream {
     public:
     inline __UnderlyingStream(StreamType type): m_type(type) {}
     inline StreamType getType() {return this->m_type;}
+    virtual bool is_null() = 0;
     inline virtual ~__UnderlyingStream() {}
 };
 

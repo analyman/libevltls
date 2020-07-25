@@ -29,6 +29,7 @@ EBStreamTLS::EBStreamTLS(UNST tlsctx) noexcept //{
     TLSUS* ctx = dynamic_cast<decltype(ctx)>(tlsctx.get()); assert(ctx);
     this->m_ctx_tmp = nullptr;
     this->m_ctx = ctx->getstream();
+    assert(this->m_ctx->mp_stream->fetchPtr() == nullptr);
     this->m_ctx->mp_stream->storePtr(this);
     this->register_listener();
     this->do_ssl_read_with_timeout_zero();
@@ -41,6 +42,7 @@ void EBStreamTLS::init_this(UNST stream) //{
     assert(!this->m_ctx->mp_stream);
 
     this->m_ctx->mp_stream = this->getStreamObject(stream);
+    assert(this->m_ctx->mp_stream->fetchPtr() == nullptr);
     this->m_ctx->mp_stream->storePtr(this);
 
     this->register_listener();
@@ -51,42 +53,7 @@ EBStreamTLS::EBStreamTLSCTX* EBStreamTLS::createCTX(EBStreamObject* stream, TLSM
                                                     const std::string& privateKey)
 {
     DEBUG("call %s", FUNCNAME);
-    EBStreamTLSCTX* ans = new std::remove_pointer_t<decltype(ans)>();
-    ans->mode = mode;
-
-    ans->ctx = SSL_CTX_new(TLS_method());
-
-    if(ans->mode == TLSMode::ServerMode) {
-        if(SSL_CTX_use_certificate(ans->ctx, str_to_x509(cert)) != 1) {
-            // FIXME ??? seems this assert is too strict, but this function will 
-            // be called from constructor and error handler call virtual function the behavior
-            // is unexpected
-            assert(false && "bad certificate");
-            return nullptr;
-        }
-        if(SSL_CTX_use_PrivateKey (ans->ctx, str_to_privateKey(privateKey)) != 1) {
-            assert(false && "bad private key");
-            return nullptr;
-        }
-        if(SSL_CTX_check_private_key(ans->ctx) != 1) {
-            assert(false && "inconsistent certificate and private key");
-            return nullptr;
-        }
-    }
-
-    ans->rbio = BIO_new(BIO_s_mem());
-    ans->wbio = BIO_new(BIO_s_mem());
-    ans->ssl  = SSL_new(ans->ctx);
-
-    if(ans->mode == TLSMode::ServerMode)
-        SSL_set_accept_state(ans->ssl);
-    else
-        SSL_set_connect_state(ans->ssl);
-
-    SSL_set_bio(ans->ssl, ans->rbio, ans->wbio);
-
-    ans->mp_stream = stream;
-    return ans;
+    return EBStreamTLS::getCTX(mode, stream, cert, privateKey);
 } //}
 
 void EBStreamTLS::register_listener() //{
@@ -369,6 +336,10 @@ bool EBStreamTLS::do_tls_handshake() //{
 
     return true;
 } //}
+
+#define SAFE_ERROR_HAPPEND() \
+    this->error_happend(); \
+    if(checker->exist()) this->cleanChecker(checker.get())
 void EBStreamTLS::pipe_to_tls(SharedMem wbuf) //{
 {
     DEBUG("call %s", FUNCNAME);
@@ -380,11 +351,16 @@ void EBStreamTLS::pipe_to_tls(SharedMem wbuf) //{
     enum do_something {NOTHING, CALL_CONNECT_CB, COMPLETE_SESSION};
     do_something doit = NOTHING;
 
+    auto checker = NewChecker();
+    this->SetChecker(checker.get());
+
     while(buf.size() > 0) {
+        if(!checker->exist()) break;
+
         auto n = BIO_write(this->m_ctx->rbio, buf.base(), buf.size());
 
         if(n < 0) {
-            this->error_happend();
+            SAFE_ERROR_HAPPEND();
             return;
         }
         buf = buf.increaseOffset(n);
@@ -394,7 +370,7 @@ void EBStreamTLS::pipe_to_tls(SharedMem wbuf) //{
                 SSL_accept(this->m_ctx->ssl);
 
             if(!this->do_tls_handshake()) {
-                this->error_happend();
+                SAFE_ERROR_HAPPEND();
                 return;
             }
 
@@ -412,17 +388,24 @@ void EBStreamTLS::pipe_to_tls(SharedMem wbuf) //{
         }
 
         int k = this->ssl_read();
+        if(!checker->exist()) break;
+
         int status = SSL_get_error(this->m_ctx->ssl, k);
         switch(status) {
             case SSL_ERROR_ZERO_RETURN:
             case SSL_ERROR_SYSCALL:
             case SSL_ERROR_SSL:
-                this->error_happend();
+                SAFE_ERROR_HAPPEND();
                 return;
             default:
                 break;
         }
     }
+
+    if(checker->exist()) 
+        this->cleanChecker(checker.get());
+    else
+        return;
 
     switch(doit) {
         case CALL_CONNECT_CB:
@@ -437,18 +420,30 @@ void EBStreamTLS::pipe_to_tls(SharedMem wbuf) //{
             return;
     }
 } //}
+#undef SAFE_ERROR_HAPPEND
+
 int  EBStreamTLS::ssl_read() //{
 {
+    DEBUG("call %s", FUNCNAME);
     int k=0;
     char rbuf[READ_SIZE];
+    auto checker = new ObjectChecker();
+    this->SetChecker(checker);
+
     do {
-        k = SSL_read(this->m_ctx->ssl, rbuf, sizeof(rbuf));
+        if(!checker->exist()) break;
+        auto c = this->m_ctx;
+        auto s = c->ssl;
+        k = SSL_read(s, rbuf, sizeof(rbuf));
         if(k > 0) {
             SharedMem buf(k);
             memcpy(buf.__base(), rbuf, k);
             this->read_callback(buf, 0);
         }
     } while(k>0);
+
+    if(checker->exist()) this->cleanChecker(checker);
+    delete checker;
     return k;
 } //}
 struct __do_ssl_read_state: public CallbackPointer {
@@ -457,6 +452,7 @@ struct __do_ssl_read_state: public CallbackPointer {
 };
 void EBStreamTLS::do_ssl_read_with_timeout_zero() //{
 {
+    DEBUG("call %s", FUNCNAME);
     auto ptr = new __do_ssl_read_state(this);
     this->add_callback(ptr);
     this->timeout(call_do_ssl_read, ptr, 0);
@@ -464,6 +460,7 @@ void EBStreamTLS::do_ssl_read_with_timeout_zero() //{
 /** [static] */
 void EBStreamTLS::call_do_ssl_read(void* data) //{
 {
+    DEBUG("call %s", FUNCNAME);
     __do_ssl_read_state* msg = 
         dynamic_cast<decltype(msg)>(static_cast<CallbackPointer*>(data));
     assert(msg);
@@ -649,13 +646,12 @@ EBStreamAbstraction::UNST EBStreamTLS::newUnderlyStream() //{
     new_stream->ssl = SSL_new(new_stream->ctx);
     new_stream->rbio = BIO_new(BIO_s_mem());
     new_stream->wbio = BIO_new(BIO_s_mem());
-    new_stream->mp_stream = this->m_ctx->mp_stream->NewStreamObject();
+    new_stream->mp_stream = this->m_ctx->mp_stream->NewStreamObject(); // FIXME LOSS
     return UNST(new TLSUS(this->getType(), new_stream));
 } //}
 void EBStreamTLS::releaseUnderlyStream(UNST stream) //{
 {
     DEBUG("call %s", FUNCNAME);
-    assert(this->m_ctx == nullptr);
     assert(this->getType() == stream->getType());
     TLSUS* ctx = dynamic_cast<decltype(ctx)>(stream.get()); assert(ctx);
     auto mm = ctx->getstream();
@@ -664,7 +660,6 @@ void EBStreamTLS::releaseUnderlyStream(UNST stream) //{
     delete mm->mp_stream;
     SSL_CTX_free(mm->ctx);
     SSL_free(mm->ssl);
-    delete  ctx;
 } //}
 bool EBStreamTLS::accept(UNST stream) //{
 {
@@ -702,7 +697,10 @@ EBStreamAbstraction::UNST EBStreamTLS::transfer() //{
 {
     DEBUG("call %s", FUNCNAME);
     assert(this->m_ctx != nullptr);
+    if(this->in_read()) this->stop_read();
     auto ctx = this->m_ctx;
+    ctx->mp_stream->removeall();
+    ctx->mp_stream->storePtr(nullptr);
     this->m_ctx = nullptr;
     return UNST(new TLSUS(this->getType(), ctx));
 } //}
@@ -713,6 +711,9 @@ void EBStreamTLS::regain(UNST stream) //{
     assert(this->getType() == stream->getType());
     TLSUS* ctx = dynamic_cast<decltype(ctx)>(stream.get()); assert(ctx);
     this->m_ctx = ctx->getstream();
+    assert(this->m_ctx->mp_stream->fetchPtr() == nullptr);
+    this->m_ctx->mp_stream->storePtr(this);
+    this->register_listener();
 } //}
 
 void  EBStreamTLS::release() //{
@@ -776,6 +777,49 @@ void EBStreamTLS::releaseCTX(EBStreamTLSCTX* mm) //{
     BIO_free(mm->wbio);
     SSL_free(mm->ssl);
     delete mm;
+} //}
+
+/** [static] */
+EBStreamTLS::EBStreamTLSCTX* EBStreamTLS::getCTX(TLSMode mode, EBStreamObject* stream, //{
+        const std::string& cert, const std::string& privatekey)
+{
+    DEBUG("call %s", FUNCNAME);
+    EBStreamTLSCTX* ans = new std::remove_pointer_t<decltype(ans)>();
+    ans->mode = mode;
+
+    ans->ctx = SSL_CTX_new(TLS_method());
+
+    if(ans->mode == TLSMode::ServerMode) {
+        if(SSL_CTX_use_certificate(ans->ctx, str_to_x509(cert)) != 1) {
+            // FIXME ??? seems this assert is too strict, but this function will 
+            // be called from constructor and error handler call virtual function the behavior
+            // is unexpected
+            assert(false && "bad certificate");
+            return nullptr;
+        }
+        if(SSL_CTX_use_PrivateKey (ans->ctx, str_to_privateKey(privatekey)) != 1) {
+            assert(false && "bad private key");
+            return nullptr;
+        }
+        if(SSL_CTX_check_private_key(ans->ctx) != 1) {
+            assert(false && "inconsistent certificate and private key");
+            return nullptr;
+        }
+    }
+
+    ans->rbio = BIO_new(BIO_s_mem());
+    ans->wbio = BIO_new(BIO_s_mem());
+    ans->ssl  = SSL_new(ans->ctx);
+
+    if(ans->mode == TLSMode::ServerMode)
+        SSL_set_accept_state(ans->ssl);
+    else
+        SSL_set_connect_state(ans->ssl);
+
+    SSL_set_bio(ans->ssl, ans->rbio, ans->wbio);
+
+    ans->mp_stream = stream;
+    return ans;
 } //}
 
 NS_EVLTLS_END
