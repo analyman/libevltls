@@ -3,6 +3,7 @@
 #include <map>
 #include <tuple>
 #include <vector>
+#include <string>
 
 #include "internal/dlinkedlist.hpp"
 #include "internal/config.h"

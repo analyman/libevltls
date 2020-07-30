@@ -1,6 +1,7 @@
 #pragma once
 
 #include <tuple>
+#include <iostream>
 
 #include <stdlib.h>
 
@@ -45,6 +46,8 @@ class SharedMem //{
         inline bool empty() const {return this->shared == nullptr;}
         void clear_free();
         std::tuple<free_func, char*> get_free() const;
+
+        std::string to_string();
 
         ~SharedMem();
 }; //}

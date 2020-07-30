@@ -118,6 +118,14 @@ SharedMem SharedMem::increaseOffset(int a) const //{
     return buf;
 } //}
 
+std::string SharedMem::to_string() //{
+{
+    if(this->size() == 0) return std::string();
+    std::string ret(this->size(), ' ');
+    memcpy((char*)ret.c_str(), this->base(), this->size());
+    return ret;
+} //}
+
 const char*  SharedMem::base() const //{
 {
     if(this->shared == nullptr) return nullptr;
